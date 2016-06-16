@@ -1,3 +1,72 @@
+// 100 chars:
+var base =
+  '-ABCDEFGHIJKLMNOPQRSTUVWXYZ-1234567890---!#$%^*()-' +
+  '-abcdefghijklmnopqrstuvwxyz-!#$%^&*()--1234567890-'
+
+function cleanup(db) {
+  return new Promise(function(resolve, reject) {
+    db.transaction(function(tx) {
+      tx.executeSql('DROP TABLE IF EXISTS tt');
+    }, function(error) {
+      reject(error);
+    }, function() {
+      resolve();
+    });
+  });
+}
+
+function getTestValues(charCount, recordCount) {
+  var repeatCount = Math.floor(charCount/100);
+  var i;
+
+  var pattern = base;
+  for (i=0; i<repeatCount; ++i) pattern += base;
+
+  var values = [];
+  for (i=0; i<recordCount; ++i)
+    values.push(pattern+i);
+
+  return values;
+}
+
+function bulkInsert(db, charCount, recordCount) {
+  var repeatCount = Math.floor(charCount/100);
+
+  var pattern = base;
+  for (var j=0; j<repeatCount; ++j) pattern += base;
+
+  return new Promise(function(resolve, reject) {
+    db.transaction(function(tx) {
+      tx.executeSql('DROP TABLE IF EXISTS tt');
+      tx.executeSql('CREATE TABLE tt (id, value);');
+
+      for (var i=0; i<recordCount; ++i)
+        tx.executeSql('INSERT INTO tt VALUES (?,?);', [101+i, pattern+i]);
+    }, function(error) {
+      reject(error);
+    }, function() {
+      resolve();
+    });
+  });
+}
+
+function insertTestValues(db, values) {
+  return new Promise(function(resolve, reject) {
+    db.transaction(function(tx) {
+      tx.executeSql('DROP TABLE IF EXISTS tt');
+      tx.executeSql('CREATE TABLE tt (id, value);');
+
+      var recordCount = values.length;
+      for (var i=0; i<recordCount; ++i)
+        tx.executeSql('INSERT INTO tt VALUES (?,?);', [101+i, values[i]]);
+    }, function(error) {
+      reject(error);
+    }, function() {
+      resolve();
+    });
+  });
+}
+
 function sqlTest(resultHandler) {
   // FUTURE TBD user-configured
   var record_count = 5*1000;
@@ -16,45 +85,40 @@ function sqlTest(resultHandler) {
   }
 
   var cleanupAndFinish = function(resultText) {
-    db.transaction(function(tx) {
-      tx.executeSql('DROP TABLE IF EXISTS tt');
+    cleanup(db).then(function() {
+      finish(resultText);
     }, function(error) {
       finish('CLEANUP error after result: ' + resultText);
-    }, function() {
-      finish(resultText);
     });
   }
 
-  // 100 chars:
-  var base =
-    '-ABCDEFGHIJKLMNOPQRSTUVWXYZ-1234567890---!#$%^*()-' +
-    '-abcdefghijklmnopqrstuvwxyz-!#$%^&*()--1234567890-'
-
-  var pattern = base;
-
-  var rc = Math.floor(char_count/100);
+  var values = getTestValues(char_count, record_count);
 
   var i;
 
-  for (i=0; i<rc; ++i) pattern += base;
-
-  var values = [];
-  for (i=0; i<record_count; ++i)
-    values.push(pattern+i);
-
   var startTime = Date.now();
+  var startTime1;
 
-  db.transaction(function(tx) {
-    tx.executeSql('DROP TABLE IF EXISTS tt;');
-    tx.executeSql('CREATE TABLE tt (id, value);');
+  bulkInsert(db, 200, 20*1000).then(null, function(error) {
+    cleanupAndFinish('FAILED: transaction error message: ' + error.message);
+    return Promise.reject();
 
-    for (i=0; i<record_count; ++i)
-      tx.executeSql('INSERT INTO tt VALUES (?,?);', [101+i, values[i]]);
+  }).then(function() {
+    return cleanup(db);
 
-  }, function(error) {
-      cleanupAndFinish('FAILED: transaction error message: ' + error.message);
+  }).then(null, function(error) {
+    cleanupAndFinish('FAILED: cleanup error message: ' + error.message);
+    return Promise.reject();
 
-  }, function() {
+  }).then(function() {
+    startTime1 = Date.now();
+    return insertTestValues(db, values);
+
+  }).then(null, function(error) {
+    cleanupAndFinish('FAILED: transaction error message: ' + error.message);
+    return Promise.reject();
+
+  }).then(function() {
     var startReadTime = Date.now();
 
     var count_check = false;
@@ -108,7 +172,8 @@ function sqlTest(resultHandler) {
           var endTime = Date.now();
           //cleanupAndFinish('SQL test OK in ms: ' + (endTime - startTime));
           cleanupAndFinish(
-            'SQL test OK write time (ms): ' + (startReadTime-startTime) +
+            'SQL test OK bulk insert time (ms): ' + (startTime1-startTime) +
+            ' write time (ms): ' + (startReadTime-startTime1) +
             ' read time (ms): ' + (endTime-startReadTime));
         });
 
