@@ -1,3 +1,3 @@
 document.addEventListener('deviceready', function() {
-  alert('received deviceready event');
+  navigator.notification.alert('received deviceready event', null, 'Cordova SQL Test');
 });
