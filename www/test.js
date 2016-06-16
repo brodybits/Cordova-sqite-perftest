@@ -69,6 +69,7 @@ function insertTestValues(db, values) {
 
 function sqlTest(resultHandler) {
   // FUTURE TBD user-configured
+  var bulk_record_count = 70*1000;
   var record_count = 5*1000;
   var char_count = 1000;
 
@@ -99,7 +100,7 @@ function sqlTest(resultHandler) {
   var startTime = Date.now();
   var startTime1;
 
-  bulkInsert(db, 200, 20*1000).then(null, function(error) {
+  bulkInsert(db, 100, bulk_record_count).then(null, function(error) {
     cleanupAndFinish('FAILED: transaction error message: ' + error.message);
     return Promise.reject();
 
