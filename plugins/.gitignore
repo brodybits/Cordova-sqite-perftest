@@ -1,5 +1,6 @@
 cordova-plugin-dialogs
 cordova-plugin-whitelist
+cordova-sqlite-*
 fetch.json
 android.json
 ios.json
