@@ -1,16 +1,13 @@
 <?xml version='1.0' encoding='utf-8'?>
 <widget id="com.test.cstest" version="0.0.1" xmlns="http://www.w3.org/ns/widgets" xmlns:cdv="http://cordova.apache.org/ns/1.0">
-    <name>CSTest</name>
+    <name>Cordova SQL test</name>
     <description>
         Cordova SQL test
     </description>
     <author email="brodybits@litehelpers.net" href="http://brodybits.com">
-        Apache Cordova Team
+        Christopher J. Brody
     </author>
     <content src="index.html" />
-    <plugin name="cordova-plugin-whitelist" spec="1" />
     <plugin name="cordova-plugin-dialogs" spec="~1.2.1" />
-    <!-- user-installed:
-    <plugin name="cordova-sqlite-storage" spec="~1.4.2" />
-     -->
+    <!-- user-installed: <plugin name="cordova-sqlite-storage" spec="???" /> -->
 </widget>
