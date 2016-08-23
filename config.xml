@@ -1,8 +1,8 @@
 <?xml version='1.0' encoding='utf-8'?>
-<widget id="com.test.cstest" version="0.0.1" xmlns="http://www.w3.org/ns/widgets" xmlns:cdv="http://cordova.apache.org/ns/1.0">
-    <name>Cordova SQL test</name>
+<widget id="com.test.sqltest" version="0.0.1" xmlns="http://www.w3.org/ns/widgets" xmlns:cdv="http://cordova.apache.org/ns/1.0">
+    <name>Cordova-SQL-test</name>
     <description>
-        Cordova SQL test
+        Cordova SQL performance test app
     </description>
     <author email="brodybits@litehelpers.net" href="http://brodybits.com">
         Christopher J. Brody
