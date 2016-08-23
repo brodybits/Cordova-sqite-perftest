@@ -1,5 +1,5 @@
 // 100 chars:
-var base =
+var BASE_PATTERN =
   '-ABCDEFGHIJKLMNOPQRSTUVWXYZ-1234567890---!#$%^*()-' +
   '-abcdefghijklmnopqrstuvwxyz-!#$%^&*()--1234567890-'
 
@@ -19,8 +19,8 @@ function getTestValues(charCount, recordCount) {
   var repeatCount = Math.floor(charCount/100);
   var i;
 
-  var pattern = base;
-  for (i=0; i<repeatCount; ++i) pattern += base;
+  var pattern = BASE_PATTERN;
+  for (i=0; i<repeatCount; ++i) pattern += BASE_PATTERN;
 
   var values = [];
   for (i=0; i<recordCount; ++i)
@@ -32,8 +32,8 @@ function getTestValues(charCount, recordCount) {
 function bulkInsert(db, charCount, recordCount) {
   var repeatCount = Math.floor(charCount/100);
 
-  var pattern = base;
-  for (var j=0; j<repeatCount; ++j) pattern += base;
+  var pattern = BASE_PATTERN;
+  for (var j=0; j<repeatCount; ++j) pattern += BASE_PATTERN;
 
   return new Promise(function(resolve, reject) {
     db.transaction(function(tx) {
@@ -97,14 +97,16 @@ function sqlTest(resultHandler) {
 
   var i;
 
-  var startTime = Date.now();
-  var startTime1;
+  var bulkStartTime = Date.now();
+  var bulkEndTime;
+  var insertbulkStartTime;
 
   bulkInsert(db, 100, bulk_record_count).then(null, function(error) {
     cleanupAndFinish('FAILED: transaction error message: ' + error.message);
     return Promise.reject();
 
   }).then(function() {
+    bulkEndTime = Date.now();
     return cleanup(db);
 
   }).then(null, function(error) {
@@ -112,7 +114,7 @@ function sqlTest(resultHandler) {
     return Promise.reject();
 
   }).then(function() {
-    startTime1 = Date.now();
+    insertbulkStartTime = Date.now();
     return insertTestValues(db, values);
 
   }).then(null, function(error) {
@@ -120,7 +122,7 @@ function sqlTest(resultHandler) {
     return Promise.reject();
 
   }).then(function() {
-    var startReadTime = Date.now();
+    var readbulkStartTime = Date.now();
 
     var count_check = false;
 
@@ -148,8 +150,8 @@ function sqlTest(resultHandler) {
       if (!full_check) {
         var stopTime = Date.now();
         cleanupAndFinish(
-          'SQL test OK write time (ms): ' + (startReadTime-startTime) +
-          ' read count time (ms): ' + (stopTime-startReadTime));
+          'SQL test OK bulk write time (ms): ' + (bulkEndTime-bulkStartTime) +
+          ' read count time (ms): ' + (stopTime-readbulkStartTime));
       }
 
       db.transaction(function(tx) {
@@ -170,12 +172,11 @@ function sqlTest(resultHandler) {
               return cleanupAndFinish('INCORRECT VALID value field at index: ' + i + ' : ' + resultSet.rows.item(i).value);
           }
 
-          var endTime = Date.now();
-          //cleanupAndFinish('SQL test OK in ms: ' + (endTime - startTime));
+          var readEndTime = Date.now();
           cleanupAndFinish(
-            'SQL test OK bulk insert time (ms): ' + (startTime1-startTime) +
-            ' write time (ms): ' + (startReadTime-startTime1) +
-            ' read time (ms): ' + (endTime-startReadTime));
+            'SQL test OK bulk insert time (ms): ' + (insertbulkStartTime-bulkStartTime) +
+            ' write time (ms): ' + (readbulkStartTime-insertbulkStartTime) +
+            ' read time (ms): ' + (readEndTime-readbulkStartTime));
         });
 
       }, function(error) {
@@ -185,27 +186,6 @@ function sqlTest(resultHandler) {
 
     });
 
-  });
-}
-
-function sqlStringTest(resultHandler) {
-  var db = window.sqlitePlugin.openDatabase({name: 'test.db', location: 'default'});
-
-  if (!db) return resultHandler('FAILED: no valid db handle');
-
-  db.transaction(function(tx) {
-    tx.executeSql("SELECT upper('Test string') AS upper_text", [], function(ignored, resultSet) {
-      if (!resultSet) return resultHandler('FAILED: MISSING valid resultSet');
-      if (!resultSet.rows) return resultHandler('FAILED: MISSING valid resultSet.rows');
-      if (!resultSet.rows.length) return resultHandler('FAILED: MISSING valid resultSet.rows.length');
-      if (resultSet.rows.length !== 1) return resultHandler('FAILED: INCORRECT resultSet.rows.length value: ' + resultSet.rows.length);
-      if (!resultSet.rows.item(0)) return resultHandler('FAILED: MISSING valid resultSet.rows.item(0)');
-      if (!resultSet.rows.item(0).upper_text) return resultHandler('FAILED: MISSING valid resultSet.rows.item(0).upper_text');
-
-      resultHandler('RESULT: GOT resultSet.rows.item(0).upper_text: ' + resultSet.rows.item(0).upper_text);
-    });
-  }, function(error) {
-    resultHandler('FAILED: transaction error message: ' + error.message);
   });
 }
 
