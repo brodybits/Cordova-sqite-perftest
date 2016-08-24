@@ -3,6 +3,16 @@ var BASE_PATTERN =
   '-ABCDEFGHIJKLMNOPQRSTUVWXYZ-1234567890---!#$%^*()-' +
   '-abcdefghijklmnopqrstuvwxyz-!#$%^&*()--1234567890-'
 
+// FUTURE TBD user-configured
+var extraBulkTestRecordCount = 20*1000;
+var extraBulkTestRecordSize = 100;
+var bulkTestRecordCount = 70*1000;
+var bulkTestRecordSize = 100;
+var readWriteTestRecordCount = 5*1000;
+var readWriteTestRecordSize = 1000;
+var repeatReadWriteTestCount = 2*1000;
+var repeatReadWriteTestRecordSize = 200;
+
 function cleanup(db) {
   return new Promise(function(resolve, reject) {
     db.transaction(function(tx) {
@@ -67,14 +77,69 @@ function insertTestValues(db, values) {
   });
 }
 
+function selectRecordCount(db) {
+  return new Promise(function(resolve, reject) {
+
+    db.transaction(function(tx) {
+      tx.executeSql("SELECT COUNT(*) AS count FROM tt;", [], function(ignored, resultSet) {
+        resolve(resultSet);
+      });
+    }, function(error) {
+      reject(error);
+    });
+  });
+}
+
+function repeatTest(db, repeatTestValues) {
+  var repeatCount = repeatTestValues.length;
+
+  return new Promise(function(resolve, reject) {
+    db.transaction(function(tx) {
+      tx.executeSql('DROP TABLE IF EXISTS tt');
+      tx.executeSql('CREATE TABLE tt (id, value);');
+
+      tx.executeSql('INSERT INTO tt VALUES (?,?);', [123, repeatTestValues[0]]);
+    }, function(error) {
+      reject(error);
+    }, function() {
+      repeatStage(1);
+
+      function repeatStage(index) {
+        if (index === repeatCount) return resolve();
+
+        db.transaction(function(tx) {
+          tx.executeSql('UPDATE tt SET value=?', [repeatTestValues[index]]);
+        }, function(error) {
+          reject(error);
+        }, function() {
+          db.transaction(function(tx) {
+            tx.executeSql("SELECT * FROM tt;", [], function(ignored, resultSet) {
+              if (!resultSet) throw new Error('FAILED: SELECT * MISSING valid resultSet');
+              if (!resultSet.rows) throw new Error('FAILED: SELECT * MISSING valid resultSet.rows');
+              if (!resultSet.rows.length) throw new Error('FAILED: SELECT * MISSING valid resultSet.rows.length');
+              if (resultSet.rows.length !== 1) throw new Error('FAILED: SELECT * INCORRECT resultSet.rows.length value: ' + resultSet.rows.length);
+
+              if (!resultSet.rows.item(0).id) throw new Error('MISSING VALID id field');
+              if (!resultSet.rows.item(0).value) throw new Error('MISSING VALID value field');
+
+              if (resultSet.rows.item(0).id !== 123)
+                 throw new Error('INCORRECT id field: ' + resultSet.rows.item(0).id);
+
+              if (resultSet.rows.item(0).value !== repeatTestValues[index])
+                throw new Error('INCORRECT value field: ' + resultSet.rows.item(0).value);
+            });
+          }, function(error) {
+            reject(error);
+          }, function() {
+            repeatStage(index+1);
+          });
+        });
+      }
+    });
+  });
+}
+
 function sqlTest(resultHandler) {
-  // FUTURE TBD user-configured
-  var bulk_record_count = 70*1000;
-  var record_count = 5*1000;
-  var char_count = 1000;
-
-  var full_check = true;
-
   // FUTURE TBD delete old test.db first
   var db = window.sqlitePlugin.openDatabase({name: 'test.db', location: 'default'});
 
@@ -93,15 +158,34 @@ function sqlTest(resultHandler) {
     });
   }
 
-  var values = getTestValues(char_count, record_count);
+  var values = getTestValues(readWriteTestRecordSize, readWriteTestRecordCount);
 
   var i;
 
-  var bulkStartTime = Date.now();
-  var bulkEndTime;
-  var insertbulkStartTime;
+  var bulkStartTime, bulkEndTime;
+  var writeStartTime;
+  var readStartTime, readEndTime;
 
-  bulkInsert(db, 100, bulk_record_count).then(null, function(error) {
+  var extraBulkStartTime = Date.now();
+  var extraBulkEndTime;
+
+  bulkInsert(db, extraBulkTestRecordSize, extraBulkTestRecordCount).then(null, function(error) {
+    cleanupAndFinish('FAILED: transaction error message: ' + error.message);
+    return Promise.reject();
+
+  }).then(function() {
+    extraBulkEndTime = Date.now();
+    return cleanup(db);
+
+  }).then(null, function(error) {
+    cleanupAndFinish('FAILED: cleanup error message: ' + error.message);
+    return Promise.reject();
+
+  }).then(function() {
+    bulkStartTime = Date.now();
+    return bulkInsert(db, bulkTestRecordSize, bulkTestRecordCount);
+
+  }).then(null, function(error) {
     cleanupAndFinish('FAILED: transaction error message: ' + error.message);
     return Promise.reject();
 
@@ -114,7 +198,7 @@ function sqlTest(resultHandler) {
     return Promise.reject();
 
   }).then(function() {
-    insertbulkStartTime = Date.now();
+    writeStartTime = Date.now();
     return insertTestValues(db, values);
 
   }).then(null, function(error) {
@@ -122,70 +206,75 @@ function sqlTest(resultHandler) {
     return Promise.reject();
 
   }).then(function() {
-    var readbulkStartTime = Date.now();
+    readStartTime = Date.now();
+    return selectRecordCount(db);
 
-    var count_check = false;
+  }).then(null, function(error) {
+    cleanupAndFinish('SELECT count FAIL: ' + error.message);
+    return Promise.reject();
 
-    db.transaction(function(tx) {
-      tx.executeSql("SELECT COUNT(*) AS count FROM tt;", [], function(ignored, resultSet) {
-        if (!resultSet) return cleanupAndFinish('FAILED: MISSING valid resultSet');
-        if (!resultSet.rows) return cleanupAndFinish('FAILED: MISSING valid resultSet.rows');
-        if (!resultSet.rows.length) return cleanupAndFinish('FAILED: MISSING valid resultSet.rows.length');
-        if (resultSet.rows.length !== 1) return cleanupAndFinish('FAILED: INCORRECT resultSet.rows.length value: ' + resultSet.rows.length);
-        if (!resultSet.rows.item(0)) return cleanupAndFinish('FAILED: MISSING valid resultSet.rows.item(0)');
-        if (!resultSet.rows.item(0).count) return cleanupAndFinish('FAILED: MISSING valid resultSet.rows.item(0).count');
+  }).then(function(resultSet) {
+    if (!resultSet) return cleanupAndFinish('FAILED: MISSING valid resultSet');
+    if (!resultSet.rows) return cleanupAndFinish('FAILED: MISSING valid resultSet.rows');
+    if (!resultSet.rows.length) return cleanupAndFinish('FAILED: MISSING valid resultSet.rows.length');
+    if (resultSet.rows.length !== 1) return cleanupAndFinish('FAILED: INCORRECT resultSet.rows.length value: ' + resultSet.rows.length);
+    if (!resultSet.rows.item(0)) return cleanupAndFinish('FAILED: MISSING valid resultSet.rows.item(0)');
+    if (!resultSet.rows.item(0).count) return cleanupAndFinish('FAILED: MISSING valid resultSet.rows.item(0).count');
 
-        if (resultSet.rows.item(0).count !== record_count)
-          return cleanupAndFinish('FAILED: INCORRECT resultSet.rows.item(0).count ' + resultSet.rows.item(0).count);
+    if (resultSet.rows.item(0).count !== readWriteTestRecordCount)
+      return cleanupAndFinish('FAILED: INCORRECT resultSet.rows.item(0).count ' + resultSet.rows.item(0).count);
 
-        count_check = true;
-      });
-
-    }, function(error) {
-      cleanupAndFinish('FAILED: transaction error message: ' + error.message);
-
-    }, function() {
-      if (!count_check) return cleanupAndFinish('FAILED: MISSING COUNT result');
-
-      if (!full_check) {
-        var stopTime = Date.now();
-        cleanupAndFinish(
-          'SQL test OK bulk write time (ms): ' + (bulkEndTime-bulkStartTime) +
-          ' read count time (ms): ' + (stopTime-readbulkStartTime));
-      }
-
+    return new Promise(function(resolve, reject) {
       db.transaction(function(tx) {
         tx.executeSql("SELECT * FROM tt;", [], function(ignored, resultSet) {
-          if (!resultSet) return cleanupAndFinish('FAILED: SELECT * MISSING valid resultSet');
-          if (!resultSet.rows) return cleanupAndFinish('FAILED: SELECT * MISSING valid resultSet.rows');
-          if (!resultSet.rows.length) return cleanupAndFinish('FAILED: SELECT * MISSING valid resultSet.rows.length');
-          if (resultSet.rows.length !== record_count) return cleanupAndFinish('FAILED: SELECT * INCORRECT resultSet.rows.length value: ' + resultSet.rows.length);
+          if (!resultSet) throw new Error('MISSING valid resultSet');
+          if (!resultSet.rows) throw new Error('MISSING valid resultSet.rows');
+          if (!resultSet.rows.length) throw new Error('MISSING valid resultSet.rows.length');
+          if (resultSet.rows.length !== readWriteTestRecordCount) throw new Error('INCORRECT resultSet.rows.length value: ' + resultSet.rows.length);
 
-          for (i=0; i<record_count; ++i) {
-            if (!resultSet.rows.item(i).id) return cleanupAndFinish('MISSING VALID id field at index: ' + i);
-            if (!resultSet.rows.item(i).value) return cleanupAndFinish('MISSING VALID value field at index: ' + i);
+          for (i=0; i<readWriteTestRecordCount; ++i) {
+            if (!resultSet.rows.item(i).id) throw new Error('MISSING VALID id field at index: ' + i);
+            if (!resultSet.rows.item(i).value) throw new Error('MISSING VALID value field at index: ' + i);
 
             if (resultSet.rows.item(i).id !== 101+i)
-              return cleanupAndFinish('INCORRECT VALID id field at index: ' + i + ' : ' + resultSet.rows.item(i).id);
+              throw new Error('INCORRECT VALID id field at index: ' + i + ' : ' + resultSet.rows.item(i).id);
 
             if (resultSet.rows.item(i).value !== values[i])
-              return cleanupAndFinish('INCORRECT VALID value field at index: ' + i + ' : ' + resultSet.rows.item(i).value);
+              throw new Error('INCORRECT VALID value field at index: ' + i + ' : ' + resultSet.rows.item(i).value);
           }
 
-          var readEndTime = Date.now();
-          cleanupAndFinish(
-            'SQL test OK bulk insert time (ms): ' + (insertbulkStartTime-bulkStartTime) +
-            ' write time (ms): ' + (readbulkStartTime-insertbulkStartTime) +
-            ' read time (ms): ' + (readEndTime-readbulkStartTime));
+          readEndTime = Date.now();
+          resolve();
         });
 
       }, function(error) {
-        cleanupAndFinish('FAILED: SELECT * transaction error message: ' + error.message);
-
+        reject(error);
       });
-
     });
 
+  }).then(null, function(error) {
+    cleanupAndFinish('SELECT * CHECK FAILED: ' + error.message);
+    return Promise.reject();
+
+  }).then(function() {
+    var repeatTestValues = getTestValues(repeatReadWriteTestRecordSize, repeatReadWriteTestCount);
+    repeatStartTime = Date.now();
+    return repeatTest(db, repeatTestValues);
+
+  }).then(null, function(error) {
+    cleanupAndFinish('SELECT * CHECK FAILED: ' + error.message);
+    return Promise.reject();
+
+  }).then(function() {
+    repeatEndTime = Date.now();
+
+  }).then(function() {
+    cleanupAndFinish(
+      'SQL test OK. Extra bulk insert time (ms): ' + (extraBulkEndTime-extraBulkStartTime) +
+      ' Bulk insert time (ms): ' + (bulkEndTime-bulkStartTime) +
+      ' write time (ms): ' + (readStartTime-writeStartTime) +
+      ' read time (ms): ' + (readEndTime-readStartTime) +
+      ' repeated read/write time (ms): ' + (repeatEndTime-repeatStartTime));
   });
 }
 
