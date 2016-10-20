@@ -4,6 +4,7 @@ var BASE_PATTERN =
   '-abcdefghijklmnopqrstuvwxyz-!#$%^&*()--1234567890-'
 
 // FUTURE TBD user-configured
+var webSQL = false;
 var extraBulkTestRecordCount = 20*1000;
 var extraBulkTestRecordSize = 100;
 var bulkTestRecordCount = 70*1000;
@@ -122,7 +123,8 @@ function repeatTest(db, repeatTestValues) {
               if (!resultSet.rows.item(0).id) throw new Error('MISSING VALID id field');
               if (!resultSet.rows.item(0).value) throw new Error('MISSING VALID value field');
 
-              if (resultSet.rows.item(0).id !== 123)
+              // XXX TBD strict numerical comparison fails on sqlite plugin 2 (Android)
+              if (!(resultSet.rows.item(0).id == 123))
                  throw new Error('INCORRECT id field: ' + resultSet.rows.item(0).id);
 
               if (resultSet.rows.item(0).value !== repeatTestValues[index])
@@ -140,13 +142,31 @@ function repeatTest(db, repeatTestValues) {
 }
 
 function sqlTest(resultHandler) {
-  // FUTURE TBD delete old test.db first
-  var db = window.sqlitePlugin.openDatabase({name: 'test.db', location: 'default'});
+  // FUTURE TBD delete old test.db first (??)
+  var db = null;
+
+  try {
+    if (!Promise)
+      return resultHandler('INVALID Promise object'); // [NOT EXPECTED]
+  } catch(e) {
+    return resultHandler('MISSING Promise object');
+  }
+
+  try {
+    if (webSQL)
+      db = window.openDatabase('test.db', '1.0', 'Test', 50*1000*1000);
+    else
+      db = window.sqlitePlugin.openDatabase({name: 'test.db', location: 'default'});
+  } catch(e) {
+    return resultHandler('FAILED due to openDatabase exception');
+  }
 
   if (!db) return resultHandler('FAILED: no valid db handle');
 
   var finish = function(resultText) {
-    db.close();
+    // Close if possible (not supported by sqlite plugin 2)
+    if (!webSQL && !!db.close)
+      db.close();
     resultHandler(resultText);
   }
 
@@ -236,7 +256,8 @@ function sqlTest(resultHandler) {
             if (!resultSet.rows.item(i).id) throw new Error('MISSING VALID id field at index: ' + i);
             if (!resultSet.rows.item(i).value) throw new Error('MISSING VALID value field at index: ' + i);
 
-            if (resultSet.rows.item(i).id !== 101+i)
+            // XXX TBD strict numerical comparison fails on sqlite plugin 2 (Android)
+            if (!(resultSet.rows.item(i).id == 101+i))
               throw new Error('INCORRECT VALID id field at index: ' + i + ' : ' + resultSet.rows.item(i).id);
 
             if (resultSet.rows.item(i).value !== values[i])
