@@ -3,16 +3,19 @@ var BASE_PATTERN =
   '-ABCDEFGHIJKLMNOPQRSTUVWXYZ-1234567890---!#$%^*()-' +
   '-abcdefghijklmnopqrstuvwxyz-!#$%^&*()--1234567890-'
 
+var K = 1000;
+
 // FUTURE TBD user-configured
 var webSQL = false;
-var extraBulkTestRecordCount = 20*1000;
+var androidDatabaseImplementation2 = false;
+var extraBulkTestRecordCount = 20*K;
 var extraBulkTestRecordSize = 100;
-var bulkTestRecordCount = 70*1000;
+var bulkTestRecordCount = 50*K;
 var bulkTestRecordSize = 100;
-var readWriteTestRecordCount = 5*1000;
-var readWriteTestRecordSize = 1000;
-var repeatReadWriteTestCount = 2*1000;
-var repeatReadWriteTestRecordSize = 200;
+var populateAndReadRecordCount = 5*K;
+var populateAndReadRecordSize = 1000;
+var repeatedUpdateReadTestCount = 1*K;
+var repeatedUpdateReadTestRecordSize = 200;
 
 function cleanup(db) {
   return new Promise(function(resolve, reject) {
@@ -91,15 +94,15 @@ function selectRecordCount(db) {
   });
 }
 
-function repeatTest(db, repeatTestValues) {
-  var repeatCount = repeatTestValues.length;
+function repeatedUpdateReadTest(db, repeatedUpdateReadTestValues) {
+  var repeatCount = repeatedUpdateReadTestValues.length;
 
   return new Promise(function(resolve, reject) {
     db.transaction(function(tx) {
       tx.executeSql('DROP TABLE IF EXISTS tt');
       tx.executeSql('CREATE TABLE tt (id, value);');
 
-      tx.executeSql('INSERT INTO tt VALUES (?,?);', [123, repeatTestValues[0]]);
+      tx.executeSql('INSERT INTO tt VALUES (?,?);', [123, repeatedUpdateReadTestValues[0]]);
     }, function(error) {
       reject(error);
     }, function() {
@@ -109,7 +112,7 @@ function repeatTest(db, repeatTestValues) {
         if (index === repeatCount) return resolve();
 
         db.transaction(function(tx) {
-          tx.executeSql('UPDATE tt SET value=?', [repeatTestValues[index]]);
+          tx.executeSql('UPDATE tt SET value=?', [repeatedUpdateReadTestValues[index]]);
         }, function(error) {
           reject(error);
         }, function() {
@@ -127,7 +130,7 @@ function repeatTest(db, repeatTestValues) {
               if (!(resultSet.rows.item(0).id == 123))
                  throw new Error('INCORRECT id field: ' + resultSet.rows.item(0).id);
 
-              if (resultSet.rows.item(0).value !== repeatTestValues[index])
+              if (resultSet.rows.item(0).value !== repeatedUpdateReadTestValues[index])
                 throw new Error('INCORRECT value field: ' + resultSet.rows.item(0).value);
             });
           }, function(error) {
@@ -156,12 +159,16 @@ function sqlTest(resultHandler) {
     if (webSQL)
       db = window.openDatabase('test.db', '1.0', 'Test', 50*1000*1000);
     else
-      db = window.sqlitePlugin.openDatabase({name: 'test.db', location: 'default'});
+      db = window.sqlitePlugin.openDatabase({
+        name: 'test.db',
+        location: 'default',
+        androidDatabaseImplementation: (androidDatabaseImplementation2 ? 2 : 'default')
+      });
   } catch(e) {
     return resultHandler('FAILED due to openDatabase exception');
   }
 
-  if (!db) return resultHandler('FAILED: no valid db handle');
+  if (!db) return resultHandler('FAILED: no valid db handle'); // [NOT EXPECTED]
 
   var finish = function(resultText) {
     // Close if possible (not supported by sqlite plugin 2)
@@ -178,7 +185,7 @@ function sqlTest(resultHandler) {
     });
   }
 
-  var values = getTestValues(readWriteTestRecordSize, readWriteTestRecordCount);
+  var values = getTestValues(populateAndReadRecordSize, populateAndReadRecordCount);
 
   var i;
 
@@ -241,7 +248,7 @@ function sqlTest(resultHandler) {
     if (!resultSet.rows.item(0)) return cleanupAndFinish('FAILED: MISSING valid resultSet.rows.item(0)');
     if (!resultSet.rows.item(0).count) return cleanupAndFinish('FAILED: MISSING valid resultSet.rows.item(0).count');
 
-    if (resultSet.rows.item(0).count !== readWriteTestRecordCount)
+    if (resultSet.rows.item(0).count !== populateAndReadRecordCount)
       return cleanupAndFinish('FAILED: INCORRECT resultSet.rows.item(0).count ' + resultSet.rows.item(0).count);
 
     return new Promise(function(resolve, reject) {
@@ -250,9 +257,9 @@ function sqlTest(resultHandler) {
           if (!resultSet) throw new Error('MISSING valid resultSet');
           if (!resultSet.rows) throw new Error('MISSING valid resultSet.rows');
           if (!resultSet.rows.length) throw new Error('MISSING valid resultSet.rows.length');
-          if (resultSet.rows.length !== readWriteTestRecordCount) throw new Error('INCORRECT resultSet.rows.length value: ' + resultSet.rows.length);
+          if (resultSet.rows.length !== populateAndReadRecordCount) throw new Error('INCORRECT resultSet.rows.length value: ' + resultSet.rows.length);
 
-          for (i=0; i<readWriteTestRecordCount; ++i) {
+          for (i=0; i<populateAndReadRecordCount; ++i) {
             if (!resultSet.rows.item(i).id) throw new Error('MISSING VALID id field at index: ' + i);
             if (!resultSet.rows.item(i).value) throw new Error('MISSING VALID value field at index: ' + i);
 
@@ -278,9 +285,9 @@ function sqlTest(resultHandler) {
     return Promise.reject();
 
   }).then(function() {
-    var repeatTestValues = getTestValues(repeatReadWriteTestRecordSize, repeatReadWriteTestCount);
+    var repeatedUpdateReadTestValues = getTestValues(repeatedUpdateReadTestRecordSize, repeatedUpdateReadTestCount);
     repeatStartTime = Date.now();
-    return repeatTest(db, repeatTestValues);
+    return repeatedUpdateReadTest(db, repeatedUpdateReadTestValues);
 
   }).then(null, function(error) {
     cleanupAndFinish('SELECT * CHECK FAILED: ' + error.message);
